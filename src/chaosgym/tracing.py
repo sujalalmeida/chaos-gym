@@ -13,6 +13,7 @@ class Event:
     elapsed_ms: float
     attempt: int | None = None
     effect_id: str | None = None
+    outcome: str | None = None
 
 
 class Trace:
@@ -32,6 +33,7 @@ class Trace:
         *,
         attempt: int | None = None,
         effect_id: str | None = None,
+        outcome: str | None = None,
     ) -> Event:
         event = Event(
             event_id=f"evt-{len(self._events) + 1:04d}",
@@ -40,6 +42,7 @@ class Trace:
             elapsed_ms=round((self._clock() - self._started) * 1000, 3),
             attempt=attempt,
             effect_id=effect_id,
+            outcome=outcome,
         )
         self._events.append(event)
         return event

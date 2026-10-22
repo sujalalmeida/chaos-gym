@@ -64,3 +64,21 @@ def test_oversized_or_missing_scenarios_are_reported_as_configuration_errors(tmp
     path.write_bytes(b"#" * 1_048_577)
     with pytest.raises(ScenarioError, match="size limit"):
         load_scenario(path)
+
+
+def test_validation_errors_do_not_echo_input_payloads(tmp_path):
+    path = tmp_path / "invalid.yaml"
+    path.write_text(SCENARIO.replace("equals: 1", "equals: private-api-token"))
+    with pytest.raises(ScenarioError) as error:
+        load_scenario(path)
+    assert "private-api-token" not in str(error.value)
+    assert "assertions.0.equals" in str(error.value)
+
+
+def test_yaml_syntax_errors_report_location_without_echoing_document_content(tmp_path):
+    path = tmp_path / "invalid.yaml"
+    path.write_text("private-api-token: [unterminated")
+    with pytest.raises(ScenarioError) as error:
+        load_scenario(path)
+    assert "private-api-token" not in str(error.value)
+    assert "line" in str(error.value)

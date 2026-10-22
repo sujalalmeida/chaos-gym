@@ -63,3 +63,13 @@ def test_contexts_do_not_share_tools_state_or_evidence():
     assert second.trace.events == ()
     with pytest.raises(KeyError):
         second.tool("tool")
+
+
+def test_async_tools_are_rejected_before_a_coroutine_can_be_treated_as_a_result():
+    context = RunContext(Limits())
+
+    async def operation():
+        return 1
+
+    with pytest.raises(ValueError, match="synchronous"):
+        context.register_tool("async_tool", operation)

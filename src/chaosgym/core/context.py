@@ -1,5 +1,6 @@
 """Explicit tool registration, run-local state, and execution budgets."""
 
+import inspect
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -62,8 +63,8 @@ class RunContext:
             raise ValueError(f"Invalid tool name: {name}")
         if name in self._tools:
             raise ValueError(f"Tool already registered: {name}")
-        if not callable(function):
-            raise ValueError(f"Tool is not callable: {name}")
+        if not callable(function) or inspect.iscoroutinefunction(function):
+            raise ValueError(f"Tool must be a synchronous callable: {name}")
         tool = Tool(name, function, tracks_commits)
         self._tools[name] = tool
 

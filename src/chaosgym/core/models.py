@@ -18,6 +18,8 @@ class FaultResult:
     attempts: int
     event_id: str | None
     activation_count: int = 0
+    times: int = 1
+    delay_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -41,3 +43,6 @@ class RunResult:
     test_error: str | None = None
     tool_calls: int = 0
     limit_violation: str | None = None
+    entrypoint: str | None = None
+    fixture: str | None = None
+    limits: dict[str, int | float] | None = None

@@ -67,6 +67,8 @@ def _evaluate(
         results.append(
             AssertionResult("run_limits_respected == 1", AssertionStatus.FAILED, 1, 0, ())
         )
+    for result in results:
+        context.trace.record("assertion_evaluated", result.name, outcome=result.status.value)
     return tuple(results)
 
 
@@ -106,11 +108,19 @@ def execute_scenario(spec: ScenarioSpec, *, enforce_deadline: bool = False) -> R
             stage = "application"
             try:
                 context.check_limits()
-                application(context, **spec.target.input)
+                returned = application(context, **spec.target.input)
+                if inspect.isawaitable(returned):
+                    if inspect.iscoroutine(returned):
+                        returned.close()
+                    raise AdapterError(
+                        "Entrypoint returned an awaitable; synchronous code is required"
+                    )
                 context.check_limits()
                 completed = context.limit_violation is None
             except RunLimitExceeded:
                 context.trace.record("application_stopped", spec.target.entrypoint)
+            except AdapterError:
+                raise
             except Exception as error:
                 application_error = type(error).__name__
                 context.trace.record("application_failed", spec.target.entrypoint)
@@ -153,10 +163,15 @@ def execute_scenario(spec: ScenarioSpec, *, enforce_deadline: bool = False) -> R
             attempts=injector.attempts if injector else 0,
             event_id=injector.events[0].event_id if triggered else None,
             activation_count=len(injector.events) if injector else 0,
+            times=spec.scenario.fault.times,
+            delay_seconds=spec.scenario.fault.delay_seconds,
         ),
         assertions=assertions,
         effects=context.ledger.effects,
         events=context.trace.events,
         tool_calls=context.tool_calls,
         limit_violation=context.limit_violation,
+        entrypoint=spec.target.entrypoint,
+        fixture=spec.target.fixture,
+        limits=spec.limits.model_dump(),
     )

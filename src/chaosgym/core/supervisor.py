@@ -45,6 +45,9 @@ def _worker_error(spec: ScenarioSpec, error: str, started: float) -> RunResult:
         application_error=None,
         test_error=f"supervision: {error}",
         limit_violation="worker_timeout" if error == "WorkerTimeout" else None,
+        entrypoint=spec.target.entrypoint,
+        fixture=spec.target.fixture,
+        limits=spec.limits.model_dump(),
         fault=FaultResult(
             type=spec.scenario.fault.type,
             target=spec.scenario.fault.target,
@@ -53,6 +56,8 @@ def _worker_error(spec: ScenarioSpec, error: str, started: float) -> RunResult:
             triggered=False,
             attempts=0,
             event_id=None,
+            times=spec.scenario.fault.times,
+            delay_seconds=spec.scenario.fault.delay_seconds,
         ),
         assertions=(),
         effects=(),

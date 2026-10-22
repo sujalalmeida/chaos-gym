@@ -4,7 +4,15 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictInt, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    StrictInt,
+    ValidationError,
+    model_validator,
+)
 from yaml.tokens import AliasToken
 
 PositiveInt = Annotated[StrictInt, Field(ge=1)]
@@ -117,5 +125,15 @@ def load_scenario(path: Path) -> ScenarioSpec:
         if isinstance(data, dict) and isinstance(data.get("assertions"), list):
             data["assertions"] = tuple(data["assertions"])
         return ScenarioSpec.model_validate(data)
-    except (OSError, UnicodeError, yaml.YAMLError, ValueError, RecursionError) as error:
+    except ValidationError as error:
+        problems = error.errors(include_input=False, include_context=False, include_url=False)
+        summary = "; ".join(
+            f"{'.'.join(map(str, item['loc'])) or 'scenario'}: {item['msg']}" for item in problems
+        )
+        raise ScenarioError(f"Invalid scenario {path}: {summary}") from None
+    except yaml.YAMLError as error:
+        mark = getattr(error, "problem_mark", None)
+        location = f" at line {mark.line + 1}, column {mark.column + 1}" if mark else ""
+        raise ScenarioError(f"Invalid YAML in {path}{location}") from None
+    except (OSError, UnicodeError, ValueError, RecursionError) as error:
         raise ScenarioError(f"Invalid scenario {path}: {error}") from error

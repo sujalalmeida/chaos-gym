@@ -39,6 +39,10 @@ def test_custom_application_uses_python_assertions_and_always_closes_fixture():
     assert run.effects[-1].kind == "cleanup"
     assert run.events[-1].event_type == "fixture_closed"
     assert run.variant is None
+    assert run.entrypoint == "tests.runner_fixtures:recover"
+    assert run.limits["max_tool_calls"] == 15
+    evaluated = [event for event in run.events if event.event_type == "assertion_evaluated"]
+    assert [event.outcome for event in evaluated] == ["passed", "passed"]
 
 
 @pytest.mark.parametrize(
