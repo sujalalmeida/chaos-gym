@@ -10,6 +10,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
@@ -31,14 +32,19 @@ jobs:
         run: pytest -q
       - name: Verify refund demonstration
         run: chaosgym demo refund --json > refund-demo.json
-      - name: Save refund evidence
+      - name: Verify packaged scenario template and supervised CLI
+        run: |
+          chaosgym init --path .chaosgym-ci.yaml
+          chaosgym test .chaosgym-ci.yaml --json > scenario-result.json
+      - name: Save run evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: refund-runs-${{ matrix.python-version }}
+          name: scenario-runs-${{ matrix.python-version }}
           path: |
             .chaosgym/runs/
             refund-demo.json
+            scenario-result.json
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
