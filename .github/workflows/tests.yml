@@ -1,0 +1,44 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install package and development tools
+        run: python -m pip install '.[dev]'
+      - name: Lint and formatting
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Test
+        run: pytest -q
+      - name: Verify refund demonstration
+        run: chaosgym demo refund --json > refund-demo.json
+      - name: Save refund evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: refund-runs-${{ matrix.python-version }}
+          path: |
+            .chaosgym/runs/
+            refund-demo.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
