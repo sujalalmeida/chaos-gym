@@ -1,6 +1,6 @@
 import pytest
 
-from chaosgym.core.context import RunContext, RunLimitExceeded
+from chaosgym.core.context import IntegrationError, RunContext, RunLimitExceeded
 from chaosgym.scenarios import Limits
 
 
@@ -73,3 +73,16 @@ def test_async_tools_are_rejected_before_a_coroutine_can_be_treated_as_a_result(
 
     with pytest.raises(ValueError, match="synchronous"):
         context.register_tool("async_tool", operation)
+
+
+def test_a_synchronous_wrapper_cannot_smuggle_an_unexecuted_coroutine_as_its_result():
+    context = RunContext(Limits())
+
+    async def operation():
+        return 1
+
+    wrapped = context.register_tool("disguised_async", lambda: operation())
+    with pytest.raises(IntegrationError, match="asynchronous"):
+        wrapped()
+    assert context.integration_error
+    assert context.trace.events[-1].event_type == "tool_failed"

@@ -13,14 +13,14 @@ from chaosgym.assertions import (
     confirmation_after_refund,
     effect_count,
 )
-from chaosgym.core.context import RunContext, RunLimitExceeded
+from chaosgym.core.context import IntegrationError, RunContext, RunLimitExceeded
 from chaosgym.core.models import FaultResult, RunResult
 from chaosgym.injectors.configured import FaultInjector
 from chaosgym.results import classify_run
 from chaosgym.scenarios import ScenarioSpec
 
 
-class AdapterError(ValueError):
+class AdapterError(IntegrationError):
     """An invalid integration contract, with a safe configuration diagnostic."""
 
 
@@ -30,7 +30,14 @@ def _resolve(path: str):
         function = getattr(importlib.import_module(module_name), name)
     except (ImportError, AttributeError) as error:
         raise AdapterError(f"Cannot import {path} ({type(error).__name__})") from error
-    if not callable(function) or inspect.iscoroutinefunction(function):
+    if not callable(function) or any(
+        check(function)
+        for check in (
+            inspect.iscoroutinefunction,
+            inspect.isasyncgenfunction,
+            inspect.isgeneratorfunction,
+        )
+    ):
         raise AdapterError(f"Expected a synchronous callable: {path}")
     return function
 
@@ -109,17 +116,20 @@ def execute_scenario(spec: ScenarioSpec, *, enforce_deadline: bool = False) -> R
             try:
                 context.check_limits()
                 returned = application(context, **spec.target.input)
-                if inspect.isawaitable(returned):
-                    if inspect.iscoroutine(returned):
+                if any(
+                    check(returned)
+                    for check in (inspect.isawaitable, inspect.isgenerator, inspect.isasyncgen)
+                ):
+                    if inspect.iscoroutine(returned) or inspect.isgenerator(returned):
                         returned.close()
-                    raise AdapterError(
-                        "Entrypoint returned an awaitable; synchronous code is required"
-                    )
+                    raise AdapterError("Entrypoint returned an asynchronous or streaming result")
+                if context.integration_error:
+                    raise AdapterError(context.integration_error)
                 context.check_limits()
                 completed = context.limit_violation is None
             except RunLimitExceeded:
                 context.trace.record("application_stopped", spec.target.entrypoint)
-            except AdapterError:
+            except IntegrationError:
                 raise
             except Exception as error:
                 application_error = type(error).__name__
@@ -129,7 +139,7 @@ def execute_scenario(spec: ScenarioSpec, *, enforce_deadline: bool = False) -> R
             stage = "teardown"
         context.trace.record("fixture_closed", spec.target.fixture)
     except (Exception, RunLimitExceeded) as error:
-        diagnostic = str(error) if isinstance(error, AdapterError) else type(error).__name__
+        diagnostic = str(error) if isinstance(error, IntegrationError) else type(error).__name__
         test_error = f"{stage}: {diagnostic}"
         context.trace.record("test_error", stage)
     finally:

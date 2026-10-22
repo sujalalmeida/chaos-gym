@@ -82,3 +82,21 @@ def ignore_cancellation(context):
                 pass
         except BaseException:
             pass
+
+
+def awaitable_application(context):
+    async def operation():
+        return 1
+
+    return operation()
+
+
+def generator_application(context):
+    yield 1
+
+
+@contextmanager
+def broken_assertion(context):
+    with fixture(context):
+        context.python_assertions.append(lambda run: None)
+        yield

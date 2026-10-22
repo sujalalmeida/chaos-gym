@@ -101,3 +101,18 @@ def test_invalid_entrypoint_input_is_a_setup_error():
     run = execute_scenario(spec)
     assert run.status == "test_error"
     assert "target.input" in run.test_error
+
+
+@pytest.mark.parametrize("entrypoint", ["awaitable_application", "generator_application"])
+def test_unsupported_application_execution_is_not_a_completed_task(entrypoint):
+    run = execute_scenario(scenario(entrypoint=entrypoint))
+    assert run.status == "test_error"
+    assert not run.completed
+    assert run.test_error
+
+
+def test_invalid_python_assertion_is_an_infrastructure_error_and_fixture_closes():
+    run = execute_scenario(scenario(fixture="broken_assertion"))
+    assert run.status == "test_error"
+    assert "Python assertions must return AssertionResult" in run.test_error
+    assert run.effects[-1].kind == "cleanup"

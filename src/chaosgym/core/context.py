@@ -20,6 +20,10 @@ class RunLimitExceeded(BaseException):
     """Control signal kept separate from application/tool exceptions."""
 
 
+class IntegrationError(ValueError):
+    """The integration returned unsupported execution semantics."""
+
+
 @dataclass(frozen=True)
 class Tool:
     name: str
@@ -36,6 +40,7 @@ class RunContext:
         self.limits = limits
         self.tool_calls = 0
         self.limit_violation: str | None = None
+        self.integration_error: str | None = None
         self._clock = clock
         self._deadline = clock() + limits.timeout_seconds
         self._tools: dict[str, Tool] = {}
@@ -63,7 +68,14 @@ class RunContext:
             raise ValueError(f"Invalid tool name: {name}")
         if name in self._tools:
             raise ValueError(f"Tool already registered: {name}")
-        if not callable(function) or inspect.iscoroutinefunction(function):
+        if not callable(function) or any(
+            check(function)
+            for check in (
+                inspect.iscoroutinefunction,
+                inspect.isasyncgenfunction,
+                inspect.isgeneratorfunction,
+            )
+        ):
             raise ValueError(f"Tool must be a synchronous callable: {name}")
         tool = Tool(name, function, tracks_commits)
         self._tools[name] = tool
@@ -82,6 +94,16 @@ class RunContext:
                     if self.interceptor is not None
                     else function(*args, **kwargs)
                 )
+                if any(
+                    check(result)
+                    for check in (inspect.isawaitable, inspect.isgenerator, inspect.isasyncgen)
+                ):
+                    if inspect.iscoroutine(result) or inspect.isgenerator(result):
+                        result.close()
+                    self.integration_error = (
+                        f"Tool {name} returned an asynchronous or streaming result"
+                    )
+                    raise IntegrationError(self.integration_error)
                 self.check_limits()
             except BaseException:
                 self.trace.record("tool_failed", name, attempt=attempt)
