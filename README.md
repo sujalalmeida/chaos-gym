@@ -28,6 +28,38 @@ The comparison exits successfully when the unsafe agent exposes the duplicate
 refund and the protected agent passes the same scenario. Each run retains its own
 `failed` or `passed` result.
 
+## Run a scenario
+
+```sh
+chaosgym init
+chaosgym test chaosgym.yaml --trace
+```
+
+`init` creates a protected refund scenario and refuses to overwrite an existing
+file. Change `target.input.variant` to `unsafe` to expose the duplicate refund.
+`test` validates the YAML, starts a fresh worker, runs the fixture and application,
+checks committed state, and saves the result.
+
+The scenario library covers six faults:
+
+| Fault | Runnable scenario |
+| --- | --- |
+| Lost acknowledgment after commit | `scenarios/refund-lost-ack.yaml` |
+| Timeout before execution | `scenarios/refund-timeout.yaml` |
+| Slow response | `scenarios/refund-slow-response.yaml` |
+| Simulated provider rate limit | `examples/provider-agent/rate-limit.yaml` |
+| Simulated provider outage | `examples/provider-agent/provider-outage.yaml` |
+| Malformed response | `examples/provider-agent/malformed-output.yaml` |
+
+```sh
+chaosgym test examples/provider-agent/rate-limit.yaml --json
+```
+
+Applications register synchronous Python tools with a run context. Scenarios
+select an exact invocation or a range of repeated faults. Shared tool-call and
+runtime budgets stop runaway workflows. See [scenario configuration](docs/scenarios.md)
+for the integration contract, assertion semantics, and execution boundaries.
+
 ## Inspect a run
 
 ```sh
@@ -77,11 +109,14 @@ and retains the generated reports as workflow artifacts.
 
 ## Current scope
 
-The refund proof is implemented: sandbox ledger, lost-acknowledgment injection,
-unsafe and protected workflows, state-based assertions, traces, and a CLI.
+The shared runner, validated YAML configuration, six deterministic fault types,
+registered Python tools, execution budgets, fixture lifecycle, state-based and
+Python assertions, traces, JSON reports, and CLI are implemented. The refund demo
+uses the same engine as configured scenarios.
 
-Next: reusable runner and scenario configuration, additional fault types, a local
-history viewer, and a verified LangGraph adapter. Arbitrary applications, live
-providers, YAML scenarios, and the dashboard are not supported yet.
+Next: SQLite run history, a local trace viewer, and a verified LangGraph adapter.
+Async integrations, HTTP/provider interception, live-model evaluation, and the
+dashboard are not supported yet. Scenario integrations execute trusted Python;
+worker supervision is not an operating-system security sandbox.
 
 See [development notes](docs/development.md) for the component boundaries and next milestone.
