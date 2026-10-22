@@ -2,6 +2,7 @@
 
 import importlib
 import inspect
+import signal
 from datetime import UTC, datetime
 from time import monotonic
 from uuid import uuid4
@@ -69,7 +70,7 @@ def _evaluate(
     return tuple(results)
 
 
-def execute_scenario(spec: ScenarioSpec) -> RunResult:
+def execute_scenario(spec: ScenarioSpec, *, enforce_deadline: bool = False) -> RunResult:
     """Execute in the current process; use the supervised entry point for CLI runs."""
     started = monotonic()
     created_at = datetime.now(UTC).isoformat()
@@ -80,6 +81,14 @@ def execute_scenario(spec: ScenarioSpec) -> RunResult:
     assertions = ()
     injector = None
     stage = "setup"
+    previous_handler = None
+    if enforce_deadline and hasattr(signal, "setitimer"):
+
+        def stop_run(signum, frame):
+            context.exceed_limit("timeout_seconds")
+
+        previous_handler = signal.signal(signal.SIGALRM, stop_run)
+        signal.setitimer(signal.ITIMER_REAL, spec.limits.timeout_seconds)
     try:
         application = _resolve(spec.target.entrypoint)
         fixture = _resolve(spec.target.fixture)
@@ -113,6 +122,10 @@ def execute_scenario(spec: ScenarioSpec) -> RunResult:
         diagnostic = str(error) if isinstance(error, AdapterError) else type(error).__name__
         test_error = f"{stage}: {diagnostic}"
         context.trace.record("test_error", stage)
+    finally:
+        if previous_handler is not None:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous_handler)
 
     triggered = injector.triggered if injector else False
     return RunResult(

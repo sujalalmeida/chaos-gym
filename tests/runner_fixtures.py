@@ -53,3 +53,32 @@ def loop(context):
             context.tool("operation")()
         except TimeoutError:
             pass
+
+
+def hang(context):
+    try:
+        context.tool("operation")()
+    except TimeoutError:
+        pass
+    while True:
+        pass
+
+
+def exit_worker(context):
+    import os
+
+    os._exit(1)
+
+
+def noisy(context):
+    print("private application output")
+    recover(context)
+
+
+def ignore_cancellation(context):
+    while True:
+        try:
+            while True:
+                pass
+        except BaseException:
+            pass
