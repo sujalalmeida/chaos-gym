@@ -3,6 +3,7 @@
 import json
 from dataclasses import asdict
 from enum import StrEnum
+from importlib.resources import files
 from pathlib import Path
 from typing import Annotated
 
@@ -11,10 +12,12 @@ from rich.console import Console
 from rich.table import Table
 
 from chaosgym.core.models import RunResult
+from chaosgym.core.supervisor import run_scenario
 from chaosgym.refund.agent import AgentVariant
 from chaosgym.refund.experiment import run_refund_experiment
 from chaosgym.reporting import write_report
 from chaosgym.results import RunStatus
+from chaosgym.scenarios import load_scenario
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 demo = typer.Typer(no_args_is_help=True)
@@ -57,6 +60,11 @@ def _show_run(console: Console, run: RunResult, path: Path, show_trace: bool) ->
                 )
     if run.application_error:
         console.print(f"  Application error: {run.application_error}")
+    if run.test_error:
+        console.print(f"  Test error: {run.test_error}", soft_wrap=True)
+    if run.limit_violation:
+        console.print(f"  Limit exceeded: {run.limit_violation}")
+    console.print(f"  Total tool calls: {run.tool_calls}")
     console.print(f"  Fault event: {run.fault.event_id or 'none'}")
     console.print(f"  Report: {path}", soft_wrap=True)
 
@@ -118,3 +126,40 @@ def refund_demo(
         if any(run.status == status for run in runs):
             raise typer.Exit(EXIT_CODES[status])
     raise typer.Exit(1)
+
+
+@app.command("init")
+def initialize(
+    path: Annotated[Path, typer.Option(help="Scenario file to create.")] = Path("chaosgym.yaml"),
+) -> None:
+    """Create a runnable local refund scenario without overwriting existing files."""
+    template = files("chaosgym").joinpath("templates/refund.yaml").read_text(encoding="utf-8")
+    try:
+        with path.open("x", encoding="utf-8") as stream:
+            stream.write(template)
+    except OSError as error:
+        Console(stderr=True, markup=False).print(f"Cannot create scenario: {error}")
+        raise typer.Exit(2) from error
+    typer.echo(f"Created {path}")
+
+
+@app.command("test")
+def test_scenario(
+    path: Annotated[Path, typer.Argument(help="Trusted local YAML scenario.")],
+    output: Annotated[Path, typer.Option(help="Run artifact directory.")] = Path(".chaosgym/runs"),
+    trace: Annotated[bool, typer.Option(help="Print the event timeline.")] = False,
+    json_output: Annotated[bool, typer.Option("--json", help="Print a JSON result.")] = False,
+) -> None:
+    """Run a configured Python application with faults, assertions, and limits."""
+    try:
+        spec = load_scenario(path)
+        run = run_scenario(spec, module_root=path.resolve().parent)
+        report = write_report(run, output)
+    except (OSError, ValueError) as error:
+        Console(stderr=True, markup=False).print(f"Test error: {error}")
+        raise typer.Exit(2) from error
+    if json_output:
+        typer.echo(json.dumps(dict(asdict(run), report_path=str(report)), indent=2))
+    else:
+        _show_run(Console(markup=False), run, report, trace)
+    raise typer.Exit(EXIT_CODES[run.status])
