@@ -13,9 +13,9 @@ class Order:
 
 
 class Sandbox:
-    def __init__(self) -> None:
-        self.ledger = Ledger()
-        self.trace = Trace()
+    def __init__(self, *, ledger: Ledger | None = None, trace: Trace | None = None) -> None:
+        self.ledger = ledger if ledger is not None else Ledger()
+        self.trace = trace if trace is not None else Trace()
         self._orders = {
             "ORD-1042": Order("ORD-1042", 2500),
             "ORD-2000": Order("ORD-2000", 1000),

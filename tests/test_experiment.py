@@ -57,6 +57,19 @@ def test_repeated_experiments_have_fresh_state_and_stable_semantic_evidence():
     ]
 
 
+def test_refund_demo_counts_each_registered_tool_call_once():
+    run = run_refund_experiment("protected")
+    started = [event for event in run.events if event.event_type == "tool_started"]
+    assert run.tool_calls == len(started) == 4
+    assert [event.operation for event in started] == [
+        "get_order",
+        "refund_payment",
+        "refund_payment",
+        "send_email",
+    ]
+    assert run.fault.activation_count == 1
+
+
 @pytest.mark.parametrize(
     "triggered,assertions,test_error,status",
     [

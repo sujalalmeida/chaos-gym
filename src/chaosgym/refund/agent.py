@@ -5,7 +5,8 @@ from enum import StrEnum
 from typing import Protocol
 
 from chaosgym.ledger import Effect
-from chaosgym.refund.sandbox import Sandbox
+from chaosgym.refund.sandbox import Order
+from chaosgym.tracing import Trace
 
 
 class AgentVariant(StrEnum):
@@ -23,6 +24,14 @@ class RefundTool(Protocol):
     ) -> Effect: ...
 
 
+class RefundServices(Protocol):
+    trace: Trace
+
+    def get_order(self, order_id: str) -> Order: ...
+
+    def send_email(self, order_id: str) -> Effect: ...
+
+
 @dataclass(frozen=True)
 class AgentOutcome:
     refund: Effect
@@ -31,13 +40,14 @@ class AgentOutcome:
 
 
 def run_agent(
-    sandbox: Sandbox,
+    sandbox: RefundServices,
     refund: RefundTool,
     *,
     variant: AgentVariant,
     order_id: str,
     request_id: str,
     max_attempts: int = 2,
+    record_tool_events: bool = True,
 ) -> AgentOutcome:
     variant = AgentVariant(variant)
     if type(max_attempts) is not int or max_attempts < 1:
@@ -45,9 +55,11 @@ def run_agent(
     if not request_id:
         raise ValueError("request_id must not be empty")
 
-    sandbox.trace.record("tool_started", "get_order")
+    if record_tool_events:
+        sandbox.trace.record("tool_started", "get_order")
     sandbox.get_order(order_id)
-    sandbox.trace.record("tool_completed", "get_order")
+    if record_tool_events:
+        sandbox.trace.record("tool_completed", "get_order")
     key = f"refund:{request_id}" if variant == AgentVariant.PROTECTED else None
 
     for attempt in range(1, max_attempts + 1):
@@ -63,9 +75,15 @@ def run_agent(
                 raise
             sandbox.trace.record("retry_scheduled", "refund_payment", attempt=attempt)
         else:
-            sandbox.trace.record("tool_started", "send_email")
+            if not isinstance(committed, Effect):
+                raise ValueError("Refund tool returned an invalid result")
+            if record_tool_events:
+                sandbox.trace.record("tool_started", "send_email")
             confirmation = sandbox.send_email(order_id)
-            sandbox.trace.record("tool_completed", "send_email", effect_id=confirmation.effect_id)
+            if record_tool_events:
+                sandbox.trace.record(
+                    "tool_completed", "send_email", effect_id=confirmation.effect_id
+                )
             return AgentOutcome(committed, confirmation, attempt)
 
     raise AssertionError("Retry loop ended without a result or exception")

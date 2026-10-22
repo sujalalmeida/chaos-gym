@@ -1,20 +1,16 @@
-"""Execute one isolated refund experiment and retain its evidence."""
+"""Convenience API for the refund scenario, using the shared runner."""
 
-from datetime import UTC, datetime
-from time import monotonic
-from uuid import uuid4
-
-from chaosgym.assertions import (
-    AssertionResult,
-    AssertionStatus,
-    confirmation_after_refund,
-    effect_count,
+from chaosgym.core.models import RunResult
+from chaosgym.core.runner import execute_scenario
+from chaosgym.refund.agent import AgentVariant
+from chaosgym.scenarios import (
+    AssertionSpec,
+    ExperimentSpec,
+    FaultSpec,
+    Limits,
+    ScenarioSpec,
+    TargetSpec,
 )
-from chaosgym.core.models import FaultResult, RunResult
-from chaosgym.injectors.lost_ack import LostAcknowledgment
-from chaosgym.refund.agent import AgentVariant, run_agent
-from chaosgym.refund.sandbox import Sandbox
-from chaosgym.results import classify_run
 
 
 def run_refund_experiment(
@@ -26,76 +22,34 @@ def run_refund_experiment(
     max_attempts: int = 2,
 ) -> RunResult:
     variant = AgentVariant(variant)
-    if type(on_call) is not int or on_call < 1:
-        raise ValueError("on_call must be a positive integer")
     if type(max_attempts) is not int or max_attempts < 1:
         raise ValueError("max_attempts must be a positive integer")
     if not request_id:
         raise ValueError("request_id must not be empty")
-    started = monotonic()
-    created_at = datetime.now(UTC).isoformat()
-    sandbox = Sandbox()
-    tool = LostAcknowledgment(
-        sandbox.refund_payment,
-        name="refund_payment",
-        ledger=sandbox.ledger,
-        trace=sandbox.trace,
-        on_call=on_call,
-    )
-    completed = False
-    application_error = None
-    try:
-        run_agent(
-            sandbox,
-            tool,
-            variant=variant,
-            order_id=order_id,
-            request_id=request_id,
-            max_attempts=max_attempts,
-        )
-        completed = True
-    except Exception as error:
-        # Keep application payloads and exception messages out of saved telemetry.
-        application_error = type(error).__name__
-        sandbox.trace.record("application_failed", "refund_agent")
-
-    assertions = (
-        effect_count(sandbox.ledger, kind="refund", resource_id=order_id, equals=1),
-        effect_count(sandbox.ledger, kind="email", resource_id=order_id, equals=1),
-        confirmation_after_refund(sandbox.ledger, resource_id=order_id),
-        AssertionResult(
-            "application_completed == 1",
-            AssertionStatus.PASSED if completed else AssertionStatus.FAILED,
-            1,
-            int(completed),
-            (),
+    spec = ScenarioSpec(
+        project="refund-agent",
+        target=TargetSpec(
+            entrypoint="chaosgym.refund.integration:run",
+            fixture="chaosgym.refund.integration:fixture",
+            input=dict(
+                variant=variant.value,
+                order_id=order_id,
+                request_id=request_id,
+                max_attempts=max_attempts,
+            ),
         ),
-    )
-    status = classify_run(triggered=tool.triggered, assertions=assertions)
-    return RunResult(
-        schema_version=1,
-        run_id=f"run-{uuid4().hex}",
-        created_at=created_at,
-        duration_ms=round((monotonic() - started) * 1000, 3),
-        scenario="lost-refund-acknowledgment",
-        variant=variant,
-        order_id=order_id,
-        request_id=request_id,
-        status=status,
-        completed=completed,
-        application_error=application_error,
-        fault=FaultResult(
-            type="response_lost_after_commit",
-            target="tool:refund_payment",
-            on_call=on_call,
-            target_reached=tool.attempts > 0,
-            triggered=tool.triggered,
-            attempts=tool.attempts,
-            event_id=tool.fault_event.event_id if tool.fault_event else None,
-            activation_count=int(tool.triggered),
+        scenario=ExperimentSpec(
+            name="lost-refund-acknowledgment",
+            fault=FaultSpec(
+                target="tool:refund_payment", type="response_lost_after_commit", on_call=on_call
+            ),
         ),
-        assertions=assertions,
-        effects=sandbox.ledger.effects,
-        events=sandbox.trace.events,
-        tool_calls=sum(event.event_type == "tool_started" for event in sandbox.trace.events),
+        assertions=(
+            AssertionSpec(type="effect_count", effect="refund", resource_id=order_id, equals=1),
+            AssertionSpec(type="effect_count", effect="email", resource_id=order_id, equals=1),
+            AssertionSpec(type="confirmation_after_refund", resource_id=order_id),
+            AssertionSpec(type="completed"),
+        ),
+        limits=Limits(max_tool_calls=max_attempts + 2),
     )
+    return execute_scenario(spec)
