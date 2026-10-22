@@ -1,0 +1,22 @@
+version: 1
+project: provider-agent
+target:
+  entrypoint: agent:run
+  fixture: agent:fixture
+  input:
+    request_id: request-1
+scenario:
+  name: provider-outage
+  fault:
+    target: tool:model
+    type: provider_outage
+    on_call: 1
+assertions:
+- type: effect_count
+  effect: notification
+  resource_id: request-1
+  equals: 1
+- type: completed
+limits:
+  timeout_seconds: 5
+  max_tool_calls: 5

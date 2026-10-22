@@ -1,0 +1,21 @@
+version: 1
+project: provider-agent
+target:
+  entrypoint: agent:run
+  fixture: agent:fixture
+  input:
+    request_id: request-1
+scenario:
+  name: malformed-output
+  fault:
+    target: tool:model
+    type: malformed_output
+    on_call: 1
+assertions:
+- type: effect_count
+  effect: notification
+  resource_id: request-1
+  equals: 0
+limits:
+  timeout_seconds: 5
+  max_tool_calls: 5

@@ -1,0 +1,32 @@
+assertions:
+- effect: refund
+  equals: 1
+  resource_id: ORD-1042
+  type: effect_count
+- effect: email
+  equals: 1
+  resource_id: ORD-1042
+  type: effect_count
+- resource_id: ORD-1042
+  type: confirmation_after_refund
+- type: completed
+limits:
+  max_tool_calls: 15
+  timeout_seconds: 30
+project: refund-agent
+scenario:
+  fault:
+    target: tool:get_order
+    type: slow_response
+    on_call: 1
+    delay_seconds: 0.01
+  name: refund-slow-response
+target:
+  entrypoint: chaosgym.refund.integration:run
+  fixture: chaosgym.refund.integration:fixture
+  input:
+    max_attempts: 2
+    order_id: ORD-1042
+    request_id: request-1042
+    variant: protected
+version: 1
