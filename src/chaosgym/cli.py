@@ -10,8 +10,9 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from chaosgym.core.models import RunResult
 from chaosgym.refund.agent import AgentVariant
-from chaosgym.refund.experiment import RunResult, run_refund_experiment
+from chaosgym.refund.experiment import run_refund_experiment
 from chaosgym.reporting import write_report
 from chaosgym.results import RunStatus
 
@@ -36,9 +37,9 @@ EXIT_CODES = {
 
 
 def _show_run(console: Console, run: RunResult, path: Path, show_trace: bool) -> None:
-    console.print(f"{run.variant.value}: {run.status.value.upper()}")
+    console.print(f"{run.variant or run.scenario}: {run.status.value.upper()}")
     console.print(
-        f"  Fault triggered: {run.fault.triggered} | Refund attempts: {run.fault.attempts}"
+        f"  Fault triggered: {run.fault.triggered} | Target attempts: {run.fault.attempts}"
     )
     checks = Table("Assertion", "Expected", "Actual", "Status")
     for check in run.assertions:

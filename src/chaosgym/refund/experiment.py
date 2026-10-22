@@ -1,6 +1,5 @@
 """Execute one isolated refund experiment and retain its evidence."""
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import monotonic
 from uuid import uuid4
@@ -11,42 +10,11 @@ from chaosgym.assertions import (
     confirmation_after_refund,
     effect_count,
 )
+from chaosgym.core.models import FaultResult, RunResult
 from chaosgym.injectors.lost_ack import LostAcknowledgment
-from chaosgym.ledger import Effect
 from chaosgym.refund.agent import AgentVariant, run_agent
 from chaosgym.refund.sandbox import Sandbox
-from chaosgym.results import RunStatus, classify_run
-from chaosgym.tracing import Event
-
-
-@dataclass(frozen=True)
-class FaultResult:
-    type: str
-    target: str
-    on_call: int
-    target_reached: bool
-    triggered: bool
-    attempts: int
-    event_id: str | None
-
-
-@dataclass(frozen=True)
-class RunResult:
-    schema_version: int
-    run_id: str
-    created_at: str
-    duration_ms: float
-    scenario: str
-    variant: AgentVariant
-    order_id: str
-    request_id: str
-    status: RunStatus
-    completed: bool
-    application_error: str | None
-    fault: FaultResult
-    assertions: tuple[AssertionResult, ...]
-    effects: tuple[Effect, ...]
-    events: tuple[Event, ...]
+from chaosgym.results import classify_run
 
 
 def run_refund_experiment(
@@ -124,8 +92,10 @@ def run_refund_experiment(
             triggered=tool.triggered,
             attempts=tool.attempts,
             event_id=tool.fault_event.event_id if tool.fault_event else None,
+            activation_count=int(tool.triggered),
         ),
         assertions=assertions,
         effects=sandbox.ledger.effects,
         events=sandbox.trace.events,
+        tool_calls=sum(event.event_type == "tool_started" for event in sandbox.trace.events),
     )

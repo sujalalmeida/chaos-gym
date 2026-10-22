@@ -6,7 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from chaosgym.refund.experiment import RunResult
+from chaosgym.core.models import RunResult
 
 
 def _write_private(path: Path, content: str) -> None:
