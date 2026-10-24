@@ -13,6 +13,7 @@ from rich.table import Table
 
 from chaosgym.core.models import RunResult
 from chaosgym.core.supervisor import run_scenario
+from chaosgym.history import HistoryError, HistoryStore, RebuildResult
 from chaosgym.refund.agent import AgentVariant
 from chaosgym.refund.experiment import run_refund_experiment
 from chaosgym.reporting import write_report
@@ -163,3 +164,95 @@ def test_scenario(
     else:
         _show_run(Console(markup=False), run, report, trace)
     raise typer.Exit(EXIT_CODES[run.status])
+
+
+def _prepare_history(store: HistoryStore, *, rebuild: bool = False) -> RebuildResult | None:
+    if store.root.exists() and not store.root.is_dir():
+        raise HistoryError("History root must be a directory")
+    has_unindexed_reports = not store.database.exists() and any(
+        store.root.glob("run-*/report.json")
+    )
+    if rebuild or has_unindexed_reports:
+        result = store.rebuild()
+        if result.skipped:
+            Console(stderr=True, markup=False).print(
+                f"Skipped {len(result.skipped)} invalid report(s). "
+                "Use history --rebuild --json for diagnostics."
+            )
+        return result
+    return None
+
+
+@app.command("history")
+def history(
+    root: Annotated[Path, typer.Option(help="Saved run directory.")] = Path(".chaosgym/runs"),
+    status: Annotated[RunStatus | None, typer.Option(help="Filter by run outcome.")] = None,
+    project: Annotated[str | None, typer.Option(help="Filter by exact project name.")] = None,
+    limit: Annotated[int, typer.Option(min=1, max=1000, help="Maximum runs to list.")] = 20,
+    offset: Annotated[int, typer.Option(min=0, help="Skip this many runs.")] = 0,
+    rebuild: Annotated[bool, typer.Option(help="Rebuild SQLite summaries from reports.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Print history and rebuild diagnostics.")
+    ] = False,
+) -> None:
+    """List saved runs, most recent first."""
+    try:
+        store = HistoryStore(root)
+        rebuilt = _prepare_history(store, rebuild=rebuild)
+        rows = store.list_runs(status=status, project=project, limit=limit, offset=offset)
+    except (OSError, ValueError) as error:
+        Console(stderr=True, markup=False).print(f"History error: {error}")
+        raise typer.Exit(2) from error
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "runs": [asdict(row) for row in rows],
+                    "limit": limit,
+                    "offset": offset,
+                    "rebuild": asdict(rebuilt) if rebuilt is not None else None,
+                },
+                indent=2,
+            )
+        )
+        return
+    console = Console(markup=False)
+    if rebuilt is not None:
+        console.print(f"Indexed {rebuilt.indexed} report(s); skipped {len(rebuilt.skipped)}.")
+    if not rows:
+        console.print("No saved runs match.")
+    for row in rows:
+        console.print(f"{row.run_id}  {row.status.value.upper()}  {row.scenario}", soft_wrap=True)
+        console.print(
+            f"  {row.created_at}  project={row.project or '-'}  variant={row.variant or '-'}",
+            soft_wrap=True,
+        )
+
+
+@app.command("show")
+def show(
+    run_id: Annotated[str, typer.Argument(help="Full run identifier, or latest.")],
+    root: Annotated[Path, typer.Option(help="Saved run directory.")] = Path(".chaosgym/runs"),
+    trace: Annotated[bool, typer.Option(help="Print the stored event timeline.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Print the stored JSON result.")
+    ] = False,
+) -> None:
+    """Inspect saved assertions and evidence without rerunning an application."""
+    try:
+        store = HistoryStore(root)
+        if run_id == "latest":
+            _prepare_history(store)
+            rows = store.list_runs(limit=1)
+            if not rows:
+                raise HistoryError("No saved runs are available")
+            run_id = rows[0].run_id
+        run = store.load(run_id)
+        path = root / run.run_id / "report.json"
+    except (OSError, ValueError) as error:
+        Console(stderr=True, markup=False).print(f"Cannot inspect run: {error}")
+        raise typer.Exit(2) from error
+    if json_output:
+        typer.echo(json.dumps(dict(asdict(run), report_path=str(path)), indent=2))
+    else:
+        _show_run(Console(markup=False), run, path, trace)
