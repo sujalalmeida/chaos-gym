@@ -1,11 +1,11 @@
 """Versioned local artifacts for the terminal, future dashboard, and CI."""
 
 import json
-import re
 from dataclasses import asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from chaosgym.artifacts import validate_run_id
 from chaosgym.core.models import RunResult
 
 
@@ -15,8 +15,7 @@ def _write_private(path: Path, content: str) -> None:
 
 
 def write_report(run: RunResult, root: Path = Path(".chaosgym/runs")) -> Path:
-    if re.fullmatch(r"run-[0-9a-f]{32}", run.run_id) is None:
-        raise ValueError("Invalid run identifier")
+    validate_run_id(run.run_id)
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     destination = root / run.run_id
     if destination.exists():
