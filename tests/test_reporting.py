@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 
 from chaosgym import reporting
+from chaosgym.history import HistoryError, HistoryStore
 from chaosgym.refund.experiment import run_refund_experiment
 
 
@@ -52,3 +53,35 @@ def test_run_identifier_cannot_escape_the_artifact_directory(tmp_path):
     with pytest.raises(ValueError, match="identifier"):
         reporting.write_report(run, tmp_path)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_successfully_published_reports_are_available_in_history(tmp_path):
+    run = run_refund_experiment("protected")
+    path = reporting.write_report(run, tmp_path)
+    (summary,) = HistoryStore(tmp_path).list_runs()
+    assert summary.run_id == run.run_id
+    assert summary.status == run.status
+    assert path.exists()
+
+
+def test_index_failure_does_not_discard_evidence_or_change_the_run_outcome(tmp_path, monkeypatch):
+    run = run_refund_experiment("protected")
+
+    def unavailable(*args):
+        raise HistoryError("Database unavailable")
+
+    monkeypatch.setattr(HistoryStore, "index", unavailable)
+    with pytest.warns(reporting.HistoryIndexWarning, match="Report saved"):
+        path = reporting.write_report(run, tmp_path)
+    assert json.loads(path.read_text())["status"] == "passed"
+    assert path.with_name("events.jsonl").exists()
+
+
+def test_history_can_be_recovered_entirely_from_saved_reports(tmp_path):
+    runs = [run_refund_experiment(variant) for variant in ("unsafe", "protected")]
+    for run in runs:
+        reporting.write_report(run, tmp_path)
+    store = HistoryStore(tmp_path)
+    store.database.unlink()
+    assert store.rebuild().indexed == 2
+    assert {row.run_id for row in store.list_runs()} == {run.run_id for run in runs}
