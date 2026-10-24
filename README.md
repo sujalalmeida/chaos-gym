@@ -79,6 +79,31 @@ Use `--output <directory>` to change the artifact location. Every value in the
 report comes from that execution. Raw prompts, tool payloads, and exception
 messages are not captured.
 
+## Saved history
+
+Each saved run is indexed in local SQLite storage alongside its JSON artifacts.
+
+```sh
+chaosgym history
+chaosgym history --status failed --project refund-agent --json
+chaosgym show latest --trace
+chaosgym show <run-id> --json
+```
+
+History lists the newest runs first and supports `--limit` and `--offset`.
+Use `--root <directory>` for artifacts saved with a custom `--output` directory.
+`show` reads recorded evidence without rerunning the application; a successful
+inspection exits with `0`, including when the stored test outcome is `failed`.
+
+```sh
+chaosgym history --rebuild
+```
+
+The index can be rebuilt from reports and is created automatically for older
+artifact folders. Invalid reports are skipped with diagnostics. JSON reports
+remain the source of truth. See [history storage](docs/history.md) for recovery
+and compatibility details.
+
 To check an untriggered fault:
 
 ```sh
@@ -105,7 +130,8 @@ ruff format --check .
 ```
 
 GitHub Actions runs the tests and demonstration on Python 3.11, 3.12, and 3.13,
-and retains the generated reports as workflow artifacts.
+and retains the generated reports as workflow artifacts. CI also checks history
+listing and inspection against the reports produced by the installed package.
 
 ## Current scope
 
@@ -114,7 +140,10 @@ registered Python tools, execution budgets, fixture lifecycle, state-based and
 Python assertions, traces, JSON reports, and CLI are implemented. The refund demo
 uses the same engine as configured scenarios.
 
-Next: SQLite run history, a local trace viewer, and a verified LangGraph adapter.
+Saved runs have a rebuildable SQLite index, filtered CLI history, and direct
+assertion and timeline inspection. Existing schema-one reports remain readable.
+
+Next: a local history API, a trace viewer, and a verified LangGraph adapter.
 Async integrations, HTTP/provider interception, live-model evaluation, and the
 dashboard are not supported yet. Scenario integrations execute trusted Python;
 worker supervision is not an operating-system security sandbox.

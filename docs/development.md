@@ -36,6 +36,8 @@ refund requests; separate requests for one order remain distinct operations.
 | `refund.integration` | Register refund services as a normal fixture and entry point |
 | `refund.experiment` | Construct the built-in scenario and call the shared engine |
 | `reporting` | Publish complete local artifact folders |
+| `artifacts` | Validate saved evidence and read compatible schema-one reports |
+| `history` | Persist filtered summaries and rebuild indexes from reports |
 | `cli` | Present results and map outcomes to exit codes |
 
 The injector does not choose the run outcome. A missing ledger is inconclusive;
@@ -55,7 +57,8 @@ committed effect. Assertion evidence lists relevant effect identifiers; assertio
 events retain outcomes. Raw application inputs and output are not saved.
 
 Artifacts are written to a temporary directory and published after both files
-are complete. Existing run folders are not overwritten. On POSIX systems, new
+are complete. Existing run folders are not overwritten. A rebuildable SQLite index stores
+listing summaries; report evidence remains canonical. On POSIX systems, new
 run folders use mode `0700` and report files use `0600`.
 
 ## Boundaries
@@ -76,8 +79,6 @@ ordering assertion is also tested against deliberately invalid ledger histories.
 
 ## Next milestone
 
-- Index saved run artifacts in local SQLite storage.
-- Add history listing and run inspection without opening files manually.
 - Expose local history and trace details through a loopback-only FastAPI service.
 - Build a basic trace viewer from stored outcomes and events.
 - Add async support before verifying a LangGraph integration.
