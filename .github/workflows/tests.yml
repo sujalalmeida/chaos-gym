@@ -36,6 +36,20 @@ jobs:
         run: |
           chaosgym init --path .chaosgym-ci.yaml
           chaosgym test .chaosgym-ci.yaml --json > scenario-result.json
+      - name: Verify persistent run history and inspection
+        run: |
+          chaosgym history --json > history.json
+          chaosgym show latest --json > saved-run.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          scenario = json.loads(Path("scenario-result.json").read_text())
+          saved = json.loads(Path("saved-run.json").read_text())
+          history = json.loads(Path("history.json").read_text())
+          assert saved["run_id"] == scenario["run_id"]
+          assert len(history["runs"]) == 3
+          assert {run["status"] for run in history["runs"]} == {"passed", "failed"}
+          PY
       - name: Save run evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -45,6 +59,8 @@ jobs:
             .chaosgym/runs/
             refund-demo.json
             scenario-result.json
+            history.json
+            saved-run.json
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
