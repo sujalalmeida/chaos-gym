@@ -1,7 +1,9 @@
 """Read saved execution evidence without importing application code."""
 
+import json
 import math
 import re
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -67,4 +69,33 @@ def read_report(path: Path, *, expected_run_id: str | None = None) -> RunResult:
         raise ArtifactError("Trace references a missing committed effect")
     if any(not set(check.effect_ids) <= effects for check in run.assertions):
         raise ArtifactError("Assertion references a missing committed effect")
+    if any(not math.isfinite(event.elapsed_ms) or event.elapsed_ms < 0 for event in run.events):
+        raise ArtifactError("Invalid trace timing")
+    if run.tool_calls < 0 or run.fault.attempts < 0 or run.fault.activation_count < 0:
+        raise ArtifactError("Invalid execution counters")
+    if run.fault.triggered:
+        fault_event = next(event for event in run.events if event.event_id == run.fault.event_id)
+        if fault_event.event_type != "fault_injected":
+            raise ArtifactError("Fault reference does not identify an injected fault")
+
+    # Early schema-one reports predate these summary fields. Derive missing
+    # counters from recorded events, while preserving explicitly stored values.
+    if (run.tool_calls == 0 and run.events) or (
+        run.fault.triggered and run.fault.activation_count == 0
+    ):
+        metadata = json.loads(content)
+        if "tool_calls" not in metadata:
+            run = replace(
+                run, tool_calls=sum(event.event_type == "tool_started" for event in run.events)
+            )
+        if "activation_count" not in metadata["fault"]:
+            run = replace(
+                run,
+                fault=replace(
+                    run.fault,
+                    activation_count=sum(
+                        event.event_type == "fault_injected" for event in run.events
+                    ),
+                ),
+            )
     return run

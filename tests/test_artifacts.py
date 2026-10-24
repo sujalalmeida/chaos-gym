@@ -65,3 +65,26 @@ def test_paths_cannot_escape_the_run_root_or_follow_artifact_symlinks(tmp_path):
     (other / run.run_id).symlink_to(path.parent, target_is_directory=True)
     with pytest.raises(ArtifactError, match="symbolic"):
         report_path(other, run.run_id)
+
+
+def test_early_schema_one_reports_derive_missing_counters_from_their_trace(tmp_path):
+    run = run_refund_experiment("protected")
+    path = write_report(run, tmp_path)
+    data = json.loads(path.read_text())
+    del data["tool_calls"]
+    del data["fault"]["activation_count"]
+    for event in data["events"]:
+        event.pop("outcome", None)
+    path.write_text(json.dumps(data))
+    restored = read_report(path)
+    assert restored.tool_calls == 4
+    assert restored.fault.activation_count == 1
+
+
+def test_an_existing_unrelated_event_cannot_impersonate_the_fault_marker(tmp_path):
+    path = write_report(run_refund_experiment("protected"), tmp_path)
+    data = json.loads(path.read_text())
+    data["fault"]["event_id"] = data["events"][0]["event_id"]
+    path.write_text(json.dumps(data))
+    with pytest.raises(ArtifactError, match="injected fault"):
+        read_report(path)
